@@ -4,11 +4,14 @@ from datetime import datetime
 from fastapi import APIRouter, HTTPException, status
 from sqlmodel import func, select
 
-from app.api.deps import SessionDep, collector_out, in_ist, transaction_outs
+from app.api.deps import SessionDep, collector_code, collector_out, in_ist, transaction_outs
+from app.engine.loaders import stored_photo_path
 from app.models import IST, Collector, Transaction
-from app.schemas import CollectorCreate, CollectorDetail, CollectorOut, CollectorSummary
+from app.schemas import CollectorCreate, CollectorDetail, CollectorErased, CollectorOut, CollectorSummary
 
 router = APIRouter(prefix="/api/collectors", tags=["collectors"])
+
+ERASED_NAME = "Erased collector"
 
 
 @router.post("", response_model=CollectorOut, status_code=status.HTTP_201_CREATED)
@@ -60,3 +63,29 @@ def get_collector(collector_id: int, session: SessionDep, limit: int = 10) -> Co
         **_summary(c, {c.id: (n, kg)}, recent[0] if recent else None),
         recent_transactions=transaction_outs(session, recent),
     )
+
+
+@router.delete("/{collector_id}", response_model=CollectorErased)
+def erase_collector(collector_id: int, session: SessionDep) -> CollectorErased:
+    """Right to erasure (DPDP Act): delete the collector's personal data and photos.
+
+    Their lots stay, anonymous, because filed EPR reports and custody chains depend
+    on them. The area (a locality, not an address) is kept for geography totals.
+    """
+    c = session.get(Collector, collector_id)
+    if c is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"collector {collector_id} not found")
+    txs = session.exec(select(Transaction).where(Transaction.collector_id == c.id)).all()
+    photos = 0
+    for t in txs:
+        path = stored_photo_path(t.photo_url)
+        if path is not None:
+            path.unlink(missing_ok=True)
+            photos += 1
+        if t.photo_url:
+            t.photo_url = None
+            session.add(t)
+    c.name, c.phone, c.aadhaar_last4 = ERASED_NAME, None, None
+    session.add(c)
+    session.commit()
+    return CollectorErased(id=c.id, code=collector_code(c.id), lots_kept=len(txs), photos_deleted=photos)

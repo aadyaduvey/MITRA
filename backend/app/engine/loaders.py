@@ -1,13 +1,14 @@
 """DB -> plain engine inputs. The only engine module that touches a Session."""
 import json
 from datetime import datetime
+from pathlib import Path
 from typing import Literal
 
 from sqlmodel import Session, func, select
 
 from app.engine.epr import EprLot
 from app.engine.material_flow import FlowRecord
-from app.engine.passport import build_passport, ist, passport_id
+from app.engine.passport import build_passport, ist, passport_id, photo_hash
 from app.engine.summary import Lot
 from app.models import Aggregator, Collector, Material, MaterialPassport, Recycler, Transaction
 
@@ -108,6 +109,24 @@ def collector_count(session: Session) -> int:
     return session.exec(select(func.count()).select_from(Collector)).one()
 
 
+DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+
+
+def stored_photo_path(photo_url: str | None, data_dir: Path | None = None) -> Path | None:
+    """File for a photo saved under backend/data (e.g. 'photos/abc.jpg'); None if absent or outside it."""
+    if not photo_url or "://" in photo_url:
+        return None
+    data_dir = (data_dir or DATA_DIR).resolve()
+    path = (data_dir / photo_url).resolve()
+    return path if data_dir in path.parents and path.is_file() else None
+
+
+def stored_photo_hash(photo_url: str | None, data_dir: Path | None = None) -> str | None:
+    """SHA-256 of a stored photo, if present."""
+    path = stored_photo_path(photo_url, data_dir)
+    return photo_hash(path.read_bytes()) if path else None
+
+
 def passport_for(session: Session, transaction_id: int) -> dict | None:
     tx = session.get(Transaction, transaction_id)
     if tx is None:
@@ -122,4 +141,5 @@ def passport_for(session: Session, transaction_id: int) -> dict | None:
         aggregator=session.get(Aggregator, tx.aggregator_id) if tx.aggregator_id else None,
         passport=mp,
         recycler=session.get(Recycler, mp.recycler_id) if mp and mp.recycler_id else None,
+        photo_sha256=stored_photo_hash(tx.photo_url),
     )

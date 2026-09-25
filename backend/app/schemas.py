@@ -44,6 +44,13 @@ class CollectorOut(BaseModel):
     registered_ts: datetime
 
 
+class CollectorErased(BaseModel):
+    id: int
+    code: str
+    lots_kept: int  # anonymous: still counted in material flow and EPR reports
+    photos_deleted: int
+
+
 class CollectorSummary(CollectorOut):
     lots: int
     kg: float

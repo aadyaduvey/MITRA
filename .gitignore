@@ -10,3 +10,7 @@ backend/data/trashnet/*
 .env
 node_modules/
 frontend/dist/
+
+# bot runtime state and uploaded photos
+backend/data/bot_state.pickle
+backend/data/photos/

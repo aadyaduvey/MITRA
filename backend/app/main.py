@@ -28,7 +28,7 @@ app = FastAPI(title="MITRA", version="0.1.0",
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.environ.get("MITRA_CORS_ORIGINS", DEFAULT_ORIGINS).split(","),
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
 for r in (routes_collectors, routes_transactions, routes_passport, routes_epr, routes_ministry):

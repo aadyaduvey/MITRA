@@ -1,29 +1,7 @@
 """HTTP tests via FastAPI's httpx-based TestClient. Fresh seeded in-memory DB per test."""
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy.pool import StaticPool
-from sqlmodel import Session, create_engine
-
-from app.db import get_session
-from app.main import app
-from app.seed import reseed
-from tests.conftest import SEED_END
 
 RANGE = {"start": "2026-09-01", "end": "2026-09-30"}  # covers the seeded 14 days
-
-
-@pytest.fixture
-def client():
-    eng = create_engine("sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool)
-    reseed(eng, end=SEED_END)
-
-    def session_override():
-        with Session(eng) as s:
-            yield s
-
-    app.dependency_overrides[get_session] = session_override
-    yield TestClient(app)  # no `with`: lifespan (which touches mitra.db) does not run
-    app.dependency_overrides.clear()
 
 
 def test_health(client):
@@ -203,3 +181,32 @@ def test_sankey(client):
 def test_cors_allows_dashboard_origin(client):
     r = client.get("/health", headers={"Origin": "http://localhost:5173"})
     assert r.headers["access-control-allow-origin"] == "http://localhost:5173"
+
+
+def test_erase_collector_keeps_anonymous_lots(client, tmp_path, monkeypatch):
+    from app.engine import loaders
+    monkeypatch.setattr(loaders, "DATA_DIR", tmp_path)
+    (tmp_path / "photos").mkdir()
+    (tmp_path / "photos" / "p.jpg").write_bytes(b"face?")
+
+    cid = client.post("/api/collectors", json={"name": "Asha Devi", "area": "Sanganer",
+                                               "phone": "9829012345", "aadhaar_last4": "1234"}).json()["id"]
+    tx = client.post("/api/transactions", json={"collector_id": cid, "material_id": 6, "weight_kg": 2,
+                                                "gps_lat": 26.82, "gps_lon": 75.79,
+                                                "photo_url": "photos/p.jpg"}).json()
+    kg_before = client.get("/api/ministry/summary").json()["totals"]["kg"]
+
+    r = client.delete(f"/api/collectors/{cid}")
+    assert r.status_code == 200
+    assert r.json() == {"id": cid, "code": f"MITRA-C-{cid:06d}", "lots_kept": 1, "photos_deleted": 1}
+    assert not (tmp_path / "photos" / "p.jpg").exists()
+
+    c = client.get(f"/api/collectors/{cid}").json()
+    assert c["name"] == "Erased collector" and c["phone"] is None and c["lots"] == 1
+    p = client.get(f"/api/passport/{tx['id']}").json()
+    assert p["collector"]["name"] == "Erased collector" and p["photo_sha256"] is None
+    assert client.get("/api/ministry/summary").json()["totals"]["kg"] == kg_before  # totals unchanged
+    # the phone number is free again
+    assert client.post("/api/collectors", json={"name": "Asha Devi", "area": "Sanganer",
+                                                "phone": "9829012345"}).status_code == 201
+    assert client.delete("/api/collectors/99999").status_code == 404
