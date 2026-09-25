@@ -6,7 +6,10 @@ need to read much.
 import re
 from html import escape
 
+from app.classify.labels import LABEL_TEXT, LABEL_TO_CATEGORIES
+
 MAX_WEIGHT_KG = 2000
+PICK_HINDI = "सही माल चुनें।"  # "choose the correct material"
 
 
 def inr(v: float) -> str:
@@ -72,8 +75,28 @@ def material_prompt() -> str:
     return "What material is it? Tap one:\nकौन सा माल है?"
 
 
-def material_button(m: dict) -> str:
-    return f"{short_name(m['name'])} · ₹{m['ref_price_per_kg']:g}/kg"
+def material_button(m: dict, suggested: bool = False) -> str:
+    return f"{'📷 ' if suggested else ''}{short_name(m['name'])} · ₹{m['ref_price_per_kg']:g}/kg"
+
+
+def ordered_materials(materials: list[dict], suggestion: dict | None) -> list[tuple[dict, bool]]:
+    """Suggested materials first (marked), then the rest. Every material is always offered."""
+    cats = set(suggestion["categories"]) if suggestion and suggestion["confident"] else set()
+    first = [(m, True) for m in materials if m["category"] in cats]
+    return first + [(m, False) for m in materials if m["category"] not in cats]
+
+
+def cv_prompt(suggestion: dict | None) -> str:
+    """What to say above the material buttons after a photo."""
+    if suggestion is None:
+        return material_prompt()
+    if not suggestion["confident"]:
+        return f"📷 I am not sure what this is. Please tap the material:\n{PICK_HINDI}"
+    if suggestion["label"] == "trash":
+        return f"📷 This looks like non-recyclable waste. If it can be recycled, tap the material:\n{PICK_HINDI}"
+    pct = min(99, round(100 * suggestion["confidence"]))  # a model is never 100% sure
+    return (f"📷 This looks like <b>{LABEL_TEXT[suggestion['label']]}</b> ({pct}% sure). "
+            f"Tap to confirm, or pick another:\n{PICK_HINDI}")
 
 
 def ask_weight(m: dict) -> str:
@@ -101,6 +124,10 @@ def receipt(tx: dict) -> str:
         f"Reference price: <b>₹{tx['ref_price_per_kg']:g}/kg</b>",
         f"Fair value: <b>{inr(tx['ref_amount'])}</b>",
     ]
+    if tx.get("cv_suggested"):
+        agreed = tx["category"] in LABEL_TO_CATEGORIES.get(tx["cv_suggested"], [])
+        lines.append(f"📷 Camera suggested {LABEL_TEXT.get(tx['cv_suggested'], tx['cv_suggested'])}; "
+                     f"{'you confirmed' if agreed else 'you chose'} {escape(tx['material'])}.")
     if tx.get("gps_lat") is not None:
         lines.append("📍 Location saved. This lot is now on the MITRA map.")
     else:

@@ -74,11 +74,11 @@ uv run python -m app.bot.telegram_bot
 | 1 | `/start` | Namaste, asks your name (English + Hindi) |
 | 2 | `Sunita Devi` | asks your area |
 | 3 | `Raja Park` | "You are registered", **Collector ID MITRA-C-0000xx**, menu buttons appear |
-| 4 | tap **📦 Log material** | material buttons with price per kg |
-| 5 | tap **Copper · ₹400/kg** | "How many kg?" |
-| 6 | `3.5` | asks for a photo |
-| 7 | send a photo, or tap **Skip photo** | asks for location |
-| 8 | tap **📍 Share location** | receipt: passport ID, ₹400/kg, fair value ₹1,400, "now on the MITRA map" |
+| 4 | tap **📦 Log material** | asks for a photo |
+| 5 | send a photo of the material (or tap **Skip photo**) | "📷 This looks like metal (…% sure)": suggested materials first, marked 📷; every material still listed |
+| 6 | tap **Copper · ₹400/kg** (you confirm; the camera only suggests) | "How many kg?" |
+| 7 | `3.5` | asks for location |
+| 8 | tap **📍 Share location** | receipt: passport ID, ₹400/kg, fair value ₹1,400, "Camera suggested metal; you confirmed Copper", "now on the MITRA map" |
 | 9 | on the dashboard, **Collector Map** | new lot outlined orange, first in **Latest lots** within ~5 s |
 
 Extras: **💰 Today's prices** (or `/prices`) shows the reference price list;
@@ -93,3 +93,28 @@ uses the same wording and the same API calls, so the dashboard updates the same 
 uv run python -m app.bot.offline_demo          # press Enter to advance each message
 uv run python -m app.bot.offline_demo --auto   # no pauses
 ```
+
+## Photo classifier (M6): a suggestion, never a decision
+
+A photo sent to the bot is classified and the likely material is shown **first,
+marked 📷**; the collector always taps the actual material. The suggestion and its
+confidence are stored on the lot (`cv_suggested`, `cv_confidence`) next to the
+material the collector confirmed, so overrides are auditable.
+
+- Model: MobileNetV3-Large (ImageNet, frozen) + a linear head trained on TrashNet.
+- **Held-out test accuracy: 90.5%** on 378 photos never used in training
+  (per-class recall: paper 95%, glass 93%, metal 87%, plastic 88%, trash 70%).
+  Full report: `data/models/mitra_cv_meta.json`.
+- The feature switches itself off ("in development") if accuracy is below 70%
+  or the model is missing; logging continues with the plain material list.
+- Limits (TrashNet): cardboard and paper are one class; plastic cannot tell PET from
+  HDPE (both are suggested); there are no e-waste photos, so e-waste is never
+  suggested; "trash" means probably not recyclable.
+
+Retrain (about 2 minutes on a laptop CPU; downloads 43 MB TrashNet + 22 MB weights once):
+```bash
+curl -L -o data/trashnet/dataset-resized.zip https://github.com/garythung/trashnet/raw/master/data/dataset-resized.zip
+cd data/trashnet && python -m zipfile -e dataset-resized.zip . && cd ../..
+uv run python -m app.classify.train
+```
+API: `GET /api/classify/status`, `POST /api/classify` (multipart `file`).

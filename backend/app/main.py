@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import (
+    routes_classify,
     routes_collectors,
     routes_epr,
     routes_ministry,
@@ -31,7 +32,8 @@ app.add_middleware(
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["*"],
 )
-for r in (routes_collectors, routes_transactions, routes_passport, routes_epr, routes_ministry):
+for r in (routes_collectors, routes_transactions, routes_passport, routes_epr, routes_ministry,
+          routes_classify):
     app.include_router(r.router)
 
 

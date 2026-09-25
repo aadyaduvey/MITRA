@@ -8,9 +8,13 @@ the same API calls, so the new collector and lot really appear on the dashboard.
 """
 import argparse
 import sys
+from uuid import uuid4
 
 from app.bot import messages as msg
 from app.bot.client import ApiError, MitraClient
+from app.bot.telegram_bot import DATA_DIR, PHOTO_DIR
+
+SAMPLE_PHOTO = DATA_DIR / "samples" / "metal_sample.jpg"  # held-out TrashNet photo (MIT)
 
 SCRIPT = {
     "name": "Sunita Devi",
@@ -42,18 +46,37 @@ def run(api: MitraClient, pause: bool = True) -> dict:
 
     show(USER, "📦 Log material", pause)
     materials = api.materials()
-    buttons = "   ".join(f"[{msg.material_button(m)}]" for m in materials)
-    show(BOT, f"{msg.material_prompt()}\n{buttons}", pause)
+    show(BOT, msg.ask_photo(), pause)
+
+    lot: dict = {}
+    suggestion = None
+    if SAMPLE_PHOTO.exists():
+        show(USER, f"(sends photo) {SAMPLE_PHOTO.name}", pause)
+        data = SAMPLE_PHOTO.read_bytes()
+        PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+        name = f"{uuid4().hex}.jpg"  # stored like a bot upload, so /forget can delete it
+        (PHOTO_DIR / name).write_bytes(data)
+        lot["photo_url"] = f"photos/{name}"
+        try:
+            suggestion = api.classify(data)  # None when the classifier is in development
+        except ApiError:
+            suggestion = None
+        if suggestion:
+            lot.update(cv_suggested=suggestion["label"], cv_confidence=suggestion["confidence"])
+        show(BOT, "📷 Photo received.", False)
+    else:
+        show(USER, "(taps) Skip photo", pause)
+
+    buttons = "   ".join(f"[{msg.material_button(m, sug)}]" for m, sug in msg.ordered_materials(materials, suggestion))
+    show(BOT, f"{msg.cv_prompt(suggestion)}\n{buttons}", pause)
     material = next(m for m in materials if m["name"] == s["material"])
     show(USER, f"(taps) {msg.material_button(material)}", pause)
     show(BOT, msg.ask_weight(material), pause)
     show(USER, s["weight"], pause)
-    show(BOT, msg.ask_photo(), pause)
-    show(USER, "(taps) Skip photo", pause)
     show(BOT, msg.ask_location(), pause)
     lat, lon = s["gps"]
     show(USER, f"(shares location) {lat}, {lon}", pause)
-    tx = api.log_lot(collector["id"], material["id"], msg.parse_weight(s["weight"]), lat, lon)
+    tx = api.log_lot(collector["id"], material["id"], msg.parse_weight(s["weight"]), lat, lon, **lot)
     show(BOT, msg.receipt(tx), False)
     print("\n→ Open the dashboard Collector Map: the lot is outlined orange in Raja Park, "
           f"and listed first under Latest lots ({collector['name']}).")

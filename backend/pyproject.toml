@@ -16,6 +16,7 @@ dependencies = [
     "reportlab",
     "httpx",
     "pytest",
+    "python-multipart>=0.0.32",
 ]
 
 [tool.uv]

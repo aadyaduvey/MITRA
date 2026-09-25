@@ -144,9 +144,41 @@ async def log_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         return END
     ud["materials"] = {m["id"]: m for m in materials}
     ud["lot"] = {}
-    buttons = [InlineKeyboardButton(msg.material_button(m), callback_data=f"mat:{m['id']}") for m in materials]
+    await _say(update, msg.ask_photo(), ReplyKeyboardMarkup([[SKIP_PHOTO]], resize_keyboard=True))
+    return PHOTO
+
+
+async def got_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    photo = update.message.photo[-1]  # largest size
+    data = bytes(await (await photo.get_file()).download_as_bytearray())
+    PHOTO_DIR.mkdir(parents=True, exist_ok=True)
+    name = f"{uuid4().hex}.jpg"
+    (PHOTO_DIR / name).write_bytes(data)
+    lot = context.user_data["lot"]
+    lot["photo_url"] = f"photos/{name}"
+    try:
+        suggestion = await _call(_api(context).classify, data)
+    except ApiError as e:  # classifier trouble never blocks logging
+        log.warning("Classifier failed, showing plain list: %s", e)
+        suggestion = None
+    if suggestion:
+        lot.update(cv_suggested=suggestion["label"], cv_confidence=suggestion["confidence"])
+    return await _ask_material(update, context, suggestion, "📷 Photo received.")
+
+
+async def skip_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    return await _ask_material(update, context, None, "OK, no photo.")
+
+
+async def _ask_material(update: Update, context: ContextTypes.DEFAULT_TYPE, suggestion: dict | None,
+                        ack: str) -> int:
+    """Material buttons; a camera suggestion only reorders and marks them, the collector decides."""
+    await _say(update, ack, ReplyKeyboardRemove())  # also hides the Skip photo button
+    materials = list(context.user_data["materials"].values())
+    buttons = [InlineKeyboardButton(msg.material_button(m, suggested), callback_data=f"mat:{m['id']}")
+               for m, suggested in msg.ordered_materials(materials, suggestion)]
     rows = [buttons[i:i + 2] for i in range(0, len(buttons), 2)]
-    await _say(update, msg.material_prompt(), InlineKeyboardMarkup(rows))
+    await _say(update, msg.cv_prompt(suggestion), InlineKeyboardMarkup(rows))
     return MATERIAL
 
 
@@ -168,21 +200,6 @@ async def got_weight(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await _say(update, msg.bad_weight())
         return WEIGHT
     context.user_data["lot"]["weight_kg"] = w
-    await _say(update, msg.ask_photo(), ReplyKeyboardMarkup([[SKIP_PHOTO]], resize_keyboard=True))
-    return PHOTO
-
-
-async def got_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    photo = update.message.photo[-1]  # largest size
-    data = await (await photo.get_file()).download_as_bytearray()
-    PHOTO_DIR.mkdir(parents=True, exist_ok=True)
-    name = f"{uuid4().hex}.jpg"
-    (PHOTO_DIR / name).write_bytes(bytes(data))
-    context.user_data["lot"]["photo_url"] = f"photos/{name}"
-    return await _ask_location(update)
-
-
-async def skip_photo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     return await _ask_location(update)
 
 

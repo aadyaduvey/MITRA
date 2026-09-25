@@ -144,44 +144,94 @@ def test_registration_flow(ctx):
     assert run(bot.start(u, ctx)) == bot.END and "Welcome back" in m.replies[-1]
 
 
-def test_log_flow_with_photo_and_location(ctx, client, tmp_path, monkeypatch):
+@pytest.fixture
+def fake_cv(monkeypatch):
+    """Stand-in classifier: no torch, no weights download, no network."""
+    from app.classify import model as cv
+    from app.classify.labels import suggestion
+
+    state = {"probs": {"metal": 0.91, "glass": 0.04, "paper": 0.03, "plastic": 0.01, "trash": 0.01},
+             "available": True}
+
+    def classify(data: bytes) -> dict:
+        if not state["available"]:
+            raise cv.Unavailable("Photo classifier in development.")
+        return suggestion(state["probs"])
+
+    monkeypatch.setattr(cv, "classify", classify)
+    return state
+
+
+def test_log_flow_photo_suggestion_then_confirm(ctx, client, tmp_path, monkeypatch, fake_cv):
     monkeypatch.setattr(bot, "PHOTO_DIR", tmp_path / "photos")
     monkeypatch.setattr(loaders, "DATA_DIR", tmp_path)
     register(ctx)
 
     u, m = update("📦 Log material")
-    assert run(bot.log_start(u, ctx)) == bot.MATERIAL
-    copper_id = next(i for i, mat in ctx.user_data["materials"].items() if mat["name"] == "Copper")
+    assert run(bot.log_start(u, ctx)) == bot.PHOTO and "photo" in m.replies[-1]
 
+    image = b"\xff\xd8fake-jpeg-bytes"
+    u, m = update(photo=[FakePhotoSize(b"small"), FakePhotoSize(image)])
+    assert run(bot.got_photo(u, ctx)) == bot.MATERIAL
+    assert "metal" in m.replies[-1] and "91% sure" in m.replies[-1]
+    assert ctx.user_data["lot"]["cv_suggested"] == "metal"
+
+    # the suggestion only reorders the list; the collector picks Copper (a metal) to confirm
+    copper_id = next(i for i, mat in ctx.user_data["materials"].items() if mat["name"] == "Copper")
     q = FakeQuery(f"mat:{copper_id}")
     assert run(bot.got_material(SimpleNamespace(callback_query=q), ctx)) == bot.WEIGHT
     assert "₹400/kg" in q.edits[-1]
 
     u, m = update("lots")  # not a number
     assert run(bot.got_weight(u, ctx)) == bot.WEIGHT and "number" in m.replies[-1]
-    assert run(bot.got_weight(update("3,5 kg")[0], ctx)) == bot.PHOTO
-
-    image = b"\xff\xd8fake-jpeg-bytes"
-    assert run(bot.got_photo(update(photo=[FakePhotoSize(b"small"), FakePhotoSize(image)])[0], ctx)) == bot.LOCATION
+    assert run(bot.got_weight(update("3,5 kg")[0], ctx)) == bot.LOCATION
 
     u, m = update(location=SimpleNamespace(latitude=26.9, longitude=75.83))
     assert run(bot.got_location(u, ctx)) == bot.END
     receipt = m.replies[-1]
     assert "MITRA-P-000401" in receipt and "₹1,400" in receipt and "on the MITRA map" in receipt
+    assert "Camera suggested metal; you confirmed Copper" in receipt
 
     tx = client.get("/api/transactions", params={"collector_id": 41}).json()[0]
     assert (tx["material"], tx["weight_kg"], tx["gps_lat"]) == ("Copper", 3.5, 26.9)
-    assert tx["photo_url"].startswith("photos/")
+    assert (tx["cv_suggested"], tx["cv_confidence"]) == ("metal", 0.91)
     passport = client.get(f"/api/passport/{tx['id']}").json()
     assert passport["photo_sha256"] == hashlib.sha256(image).hexdigest()
+    assert passport["classification"] == {"confirmed_by": "collector", "cv_suggested": "metal", "cv_confidence": 0.91}
+
+
+def test_collector_overrides_wrong_suggestion(ctx, client, tmp_path, monkeypatch, fake_cv):
+    monkeypatch.setattr(bot, "PHOTO_DIR", tmp_path / "photos")
+    register(ctx)
+    run(bot.log_start(update("log")[0], ctx))
+    run(bot.got_photo(update(photo=[FakePhotoSize(b"img")])[0], ctx))  # camera says metal
+    glass_id = next(i for i, mat in ctx.user_data["materials"].items() if mat["category"] == "glass")
+    run(bot.got_material(SimpleNamespace(callback_query=FakeQuery(f"mat:{glass_id}")), ctx))
+    run(bot.got_weight(update("20")[0], ctx))
+    u, m = update(bot.SKIP_LOCATION)
+    run(bot.skip_location(u, ctx))
+    assert "Camera suggested metal; you chose Glass" in m.replies[-1]
+    assert client.get("/api/transactions", params={"collector_id": 41}).json()[0]["material"] == "Glass"
+
+
+def test_photo_when_classifier_in_development(ctx, tmp_path, monkeypatch, fake_cv):
+    monkeypatch.setattr(bot, "PHOTO_DIR", tmp_path / "photos")
+    fake_cv["available"] = False
+    register(ctx)
+    run(bot.log_start(update("log")[0], ctx))
+    u, m = update(photo=[FakePhotoSize(b"img")])
+    assert run(bot.got_photo(u, ctx)) == bot.MATERIAL  # plain list, logging continues
+    assert m.replies[-1] == msg.material_prompt()
+    assert "cv_suggested" not in ctx.user_data["lot"]
 
 
 def test_log_without_photo_or_location(ctx, client):
     register(ctx)
-    run(bot.log_start(update("log")[0], ctx))
+    assert run(bot.log_start(update("log")[0], ctx)) == bot.PHOTO
+    u, m = update(bot.SKIP_PHOTO)
+    assert run(bot.skip_photo(u, ctx)) == bot.MATERIAL and m.replies[-1] == msg.material_prompt()
     run(bot.got_material(SimpleNamespace(callback_query=FakeQuery("mat:1")), ctx))
-    run(bot.got_weight(update("10")[0], ctx))
-    assert run(bot.skip_photo(update(bot.SKIP_PHOTO)[0], ctx)) == bot.LOCATION
+    assert run(bot.got_weight(update("10")[0], ctx)) == bot.LOCATION
     u, m = update(bot.SKIP_LOCATION)
     assert run(bot.skip_location(u, ctx)) == bot.END
     assert "not appear on the map" in m.replies[-1]
@@ -217,11 +267,37 @@ def test_conversation_and_application_build():
     assert conv.persistent and conv.name == "mitra"
 
 
-def test_offline_demo_runs_end_to_end(client, capsys):
+def test_offline_demo_runs_end_to_end(client, capsys, tmp_path, monkeypatch, fake_cv):
+    from app.bot import offline_demo
+    monkeypatch.setattr(offline_demo, "PHOTO_DIR", tmp_path / "photos")
     tx = run_offline_demo(MitraClient(client=client), pause=False)
     out = capsys.readouterr().out
     assert tx["material"] == "Copper" and tx["gps_lat"] is not None
     assert "Sunita Devi" in out and tx["passport_id"] in out and "₹1,400" in out
+    assert "This looks like metal" in out and tx["cv_suggested"] == "metal"
+
+
+# ---------- suggestion text and ordering (pure) ----------
+
+
+def test_suggested_materials_come_first_and_all_stay_available():
+    mats = [{"id": 1, "name": "PET plastic", "category": "pet", "ref_price_per_kg": 12},
+            {"id": 2, "name": "HDPE", "category": "hdpe", "ref_price_per_kg": 14},
+            {"id": 3, "name": "Glass", "category": "glass", "ref_price_per_kg": 2}]
+    plastic = {"label": "plastic", "confidence": 0.8, "categories": ["pet", "hdpe"], "confident": True}
+    ordered = msg.ordered_materials(mats, plastic)
+    assert [(m["id"], s) for m, s in ordered] == [(1, True), (2, True), (3, False)]
+    unsure = {**plastic, "confident": False}
+    assert all(not s for _, s in msg.ordered_materials(mats, unsure))
+    assert msg.material_button(mats[0], True).startswith("📷 ")
+
+
+def test_cv_prompt_wording():
+    base = {"alternatives": []}
+    assert "not sure" in msg.cv_prompt({**base, "label": "metal", "confidence": 0.3, "categories": ["metal"], "confident": False})
+    assert "non-recyclable" in msg.cv_prompt({**base, "label": "trash", "confidence": 0.9, "categories": [], "confident": True})
+    assert "99% sure" in msg.cv_prompt({**base, "label": "metal", "confidence": 1.0, "categories": ["metal"], "confident": True})
+    assert msg.cv_prompt(None) == msg.material_prompt()
 
 
 def test_persistence_keeps_api_client_on_restart(tmp_path):

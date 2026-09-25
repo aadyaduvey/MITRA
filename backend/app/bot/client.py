@@ -68,11 +68,18 @@ class MitraClient:
         r = self._request("DELETE", f"/api/collectors/{collector_id}")
         return None if r.status_code == 404 else self._json(r)
 
+    def classify(self, image: bytes) -> dict | None:
+        """Material suggestion for a photo; None when the classifier is off (in development)."""
+        r = self._request("POST", "/api/classify", files={"file": ("photo.jpg", image, "image/jpeg")})
+        return None if r.status_code == 503 else self._json(r)
+
     def log_lot(self, collector_id: int, material_id: int, weight_kg: float,
                 gps_lat: float | None = None, gps_lon: float | None = None,
-                photo_url: str | None = None) -> dict:
+                photo_url: str | None = None, cv_suggested: str | None = None,
+                cv_confidence: float | None = None) -> dict:
         body = {"collector_id": collector_id, "material_id": material_id, "weight_kg": weight_kg,
-                "gps_lat": gps_lat, "gps_lon": gps_lon, "photo_url": photo_url}
+                "gps_lat": gps_lat, "gps_lon": gps_lon, "photo_url": photo_url,
+                "cv_suggested": cv_suggested, "cv_confidence": cv_confidence}
         r = self._request("POST", "/api/transactions", json=body)
         if r.status_code == 422 and "unknown collector_id" in self._detail(r):
             raise UnknownCollector("Your registration was not found. Please send /start to register again.")

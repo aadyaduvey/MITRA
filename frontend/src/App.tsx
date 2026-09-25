@@ -36,7 +36,10 @@ export default function App() {
             <span className="text-2xl font-bold tracking-wide">MITRA</span>
             <span className="text-[0.9rem] text-white/75">Material Intelligence, Traceability &amp; Recovery Architecture</span>
           </div>
-          <ApiStatus />
+          <div className="ml-auto flex flex-wrap items-center gap-x-5 gap-y-1">
+            <CvStatus />
+            <ApiStatus />
+          </div>
         </div>
         <nav className="mx-auto flex max-w-[1680px] gap-1 overflow-x-auto px-4 pt-2" aria-label="Views">
           {VIEWS.map((v) => (
@@ -71,9 +74,30 @@ function ApiStatus() {
   const health = useApi<{ status: string }>('/health', 10000)
   const ok = health.data?.status === 'ok' && !health.error
   return (
-    <div className="ml-auto flex items-center gap-2 text-[0.85rem] text-white/85" role="status">
+    <div className="flex items-center gap-2 text-[0.85rem] text-white/85" role="status">
       <span className={`h-2.5 w-2.5 rounded-full ${ok ? 'bg-[#0ca30c]' : health.error ? 'bg-[#d03b3b]' : 'bg-white/40'}`} />
       {ok ? 'API connected' : health.error ? 'API offline' : 'Connecting…'}
+    </div>
+  )
+}
+
+interface CvStatusData {
+  available: boolean
+  reason: string
+  test_accuracy: number | null
+}
+
+/** Photo classifier: on (suggestion only, with its held-out accuracy) or "in development". */
+function CvStatus() {
+  const cv = useApi<CvStatusData>('/api/classify/status')
+  if (!cv.data) return null
+  const on = cv.data.available && cv.data.test_accuracy !== null
+  return (
+    <div className="flex items-center gap-2 text-[0.85rem] text-white/85" title={cv.data.reason}>
+      <span aria-hidden>📷</span>
+      {on
+        ? <>Photo AI: suggestion only · {Math.round(cv.data.test_accuracy! * 100)}% held-out accuracy</>
+        : <>Photo AI: <span className="rounded bg-white/15 px-1.5 py-0.5 font-medium">in development</span></>}
     </div>
   )
 }

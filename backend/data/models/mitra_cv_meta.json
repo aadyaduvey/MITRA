@@ -1,0 +1,89 @@
+{
+  "backbone": "torchvision mobilenet_v3_large IMAGENET1K_V1 (frozen), 1280-d features",
+  "dataset": "TrashNet dataset-resized (Thung & Yang 2016); cardboard+paper merged into paper",
+  "labels": [
+    "paper",
+    "glass",
+    "metal",
+    "plastic",
+    "trash"
+  ],
+  "split": {
+    "train": 1769,
+    "val": 380,
+    "test": 378,
+    "seed": 42
+  },
+  "train_views": 3,
+  "val_accuracy": 0.8974,
+  "best_epoch": 18,
+  "test_accuracy": 0.9048,
+  "per_class": {
+    "paper": {
+      "precision": 0.953,
+      "recall": 0.946,
+      "support": 149
+    },
+    "glass": {
+      "precision": 0.886,
+      "recall": 0.933,
+      "support": 75
+    },
+    "metal": {
+      "precision": 0.883,
+      "recall": 0.869,
+      "support": 61
+    },
+    "plastic": {
+      "precision": 0.928,
+      "recall": 0.877,
+      "support": 73
+    },
+    "trash": {
+      "precision": 0.636,
+      "recall": 0.7,
+      "support": 20
+    }
+  },
+  "confusion": [
+    [
+      141,
+      1,
+      2,
+      1,
+      4
+    ],
+    [
+      0,
+      70,
+      2,
+      3,
+      0
+    ],
+    [
+      3,
+      3,
+      53,
+      1,
+      1
+    ],
+    [
+      0,
+      4,
+      2,
+      64,
+      3
+    ],
+    [
+      4,
+      1,
+      1,
+      0,
+      14
+    ]
+  ],
+  "min_accuracy": 0.7,
+  "enabled": true,
+  "trained_at": "2026-09-25T21:00:09+00:00",
+  "train_seconds": 81
+}

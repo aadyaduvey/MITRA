@@ -7,6 +7,8 @@ backend/data/trashnet/*
 !backend/data/trashnet/.gitkeep
 *.pt
 *.pth
+# the trained classifier head is 27 KB: commit it so a fresh clone has the camera suggestion
+!backend/data/models/mitra_cv_head.pt
 .env
 node_modules/
 frontend/dist/

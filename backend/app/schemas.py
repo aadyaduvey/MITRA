@@ -309,3 +309,29 @@ class Sankey(BaseModel):
     kg_total: float
     kg_traced: float
     pct_traced: float
+
+
+# ---------- photo classifier (suggestion only) ----------
+
+
+class CvStatus(BaseModel):
+    available: bool
+    reason: str
+    test_accuracy: float | None
+    min_accuracy: float
+    labels: list[str]
+    trained_at: str | None
+
+
+class CvAlternative(BaseModel):
+    label: str
+    confidence: float
+
+
+class ClassifyOut(BaseModel):
+    label: str  # paper | glass | metal | plastic | trash
+    confidence: float
+    categories: list[str]  # MITRA categories to suggest; plastic -> [pet, hdpe]; trash -> []
+    confident: bool
+    alternatives: list[CvAlternative]
+    note: str
