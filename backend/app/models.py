@@ -17,7 +17,7 @@ IST = timezone(timedelta(hours=5, minutes=30))
 class Collector(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     name: str
-    phone: str = Field(index=True, unique=True)
+    phone: str | None = Field(default=None, index=True, unique=True)  # optional via chat signup
     area: str
     aadhaar_last4: str | None = Field(default=None, max_length=4)
     registered_ts: datetime
