@@ -5,7 +5,7 @@ from sqlalchemy.pool import StaticPool
 from sqlmodel import Session, create_engine, select
 
 from app.models import Aggregator, Collector, Material, MaterialPassport, Recycler, Transaction
-from app.seed import AREAS, JAIPUR_CENTER, N_DAYS, reseed
+from app.seed import AREAS, DISPATCH_MIN_AGE, JAIPUR_CENTER, N_DAYS, reseed
 from tests.conftest import SEED_END
 
 CATEGORIES = {"pet", "hdpe", "paper", "glass", "metal", "ewaste"}
@@ -94,3 +94,24 @@ def test_transaction_gps_is_near_collector_area(session):
     for t in session.exec(select(Transaction)).all():
         lat, lon = AREAS[session.get(Collector, t.collector_id).area]
         assert abs(t.gps_lat - lat) <= 0.021 and abs(t.gps_lon - lon) <= 0.021
+
+
+def test_dispatch_rule_and_no_future_custody_events(session):
+    from datetime import datetime
+
+    passports = {p.transaction_id: p for p in session.exec(select(MaterialPassport))}
+    txs = session.exec(select(Transaction)).all()
+    for t in txs:
+        p = passports.get(t.id)
+        if SEED_END - t.ts < DISPATCH_MIN_AGE:
+            assert p is None  # too recent to have left the aggregator
+        if p is None:
+            continue
+        chain = json.loads(p.chain_json)
+        times = [datetime.fromisoformat(h["ts"]) for h in chain if h["ts"]]
+        assert times == sorted(times) and max(times) <= SEED_END
+        assert (chain[2]["ts"] is None) == (p.status == "in_transit")
+    kg = sum(t.weight_kg for t in txs)
+    traced = sum(t.weight_kg for t in txs if t.id in passports)
+    assert 0.6 <= traced / kg <= 0.9  # most material traced, some visibly awaiting dispatch
+    assert {p.status for p in passports.values()} == {"delivered", "in_transit"}

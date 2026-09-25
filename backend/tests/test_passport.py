@@ -72,7 +72,7 @@ def test_flow_records_cover_all_seeded_kg(session):
     total = sum(t.weight_kg for t in session.exec(select(Transaction)))
     assert len(records) == 400
     assert round(sum(r.kg for r in records), 1) == round(total, 1)
-    assert sum(1 for r in records if r.recycler) == 15
+    assert sum(1 for r in records if r.recycler) == len(session.exec(select(MaterialPassport)).all())
     assert len({r.collector for r in flow_records(session, group_by="area")}) <= 15
 
 

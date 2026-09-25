@@ -32,7 +32,8 @@ from app.models import (
 N_COLLECTORS = 40
 N_TRANSACTIONS = 400
 N_DAYS = 14
-N_PASSPORTS = 15
+DISPATCH_MIN_AGE = timedelta(days=2)  # younger lots are still with the aggregator
+UNDISPATCHED_SHARE = 0.10  # older lots the aggregator has not dispatched yet
 JAIPUR_CENTER = (26.9, 75.8)
 JAIPUR_SPREAD = 0.1  # every GPS point is clamped to centre +/- this
 
@@ -176,14 +177,15 @@ def make_transactions(
 
 
 def build_chain(tx: Transaction, collector: Collector, agg: Aggregator, rec: Recycler,
-                agg_ts: datetime, rec_ts: datetime) -> list[dict]:
+                agg_ts: datetime, rec_ts: datetime | None) -> list[dict]:
+    """rec_ts None = dispatched to the recycler, receipt not yet recorded."""
     return [
         {"stage": "collector", "id": collector.id, "name": collector.name,
          "area": collector.area, "ts": tx.ts.isoformat()},
         {"stage": "aggregator", "id": agg.id, "name": agg.name,
          "reg_no": agg.cpcb_reg_no, "ts": agg_ts.isoformat()},
         {"stage": "recycler", "id": rec.id, "name": rec.name,
-         "cpcb_reg_no": rec.cpcb_reg_no, "ts": rec_ts.isoformat()},
+         "cpcb_reg_no": rec.cpcb_reg_no, "ts": rec_ts.isoformat() if rec_ts else None},
     ]
 
 
@@ -196,28 +198,31 @@ def make_passports(
     recyclers: list[Recycler],
     end: datetime,
 ) -> list[MaterialPassport]:
-    """Multi-hop passports for a sample of lots, at least one per material."""
-    picked: list[Transaction] = []
-    for mid in materials:
-        picked.append(rng.choice([t for t in txs if t.material_id == mid]))
-    picked_ids = {t.id for t in picked}
-    rest = [t for t in txs if t.id not in picked_ids]
-    picked += rng.sample(rest, N_PASSPORTS - len(picked))
+    """Passports for lots the aggregator has dispatched to an authorised recycler.
 
+    Lots younger than DISPATCH_MIN_AGE, and a random UNDISPATCHED_SHARE of the
+    older ones, are still held by the aggregator and get no passport. A dispatched
+    lot is `delivered` once its recycler receipt time has passed, else `in_transit`.
+    """
     passports = []
-    for tx in sorted(picked, key=lambda t: t.id):
-        cat = materials[tx.material_id].category
-        rec = next(r for r in recyclers if cat in r.categories.split(","))
+    for tx in sorted(txs, key=lambda t: t.id):
+        # Draw every value for every lot so the random stream does not depend on `end`.
+        held = rng.random() < UNDISPATCHED_SHARE
         agg_ts = tx.ts + timedelta(days=rng.randint(1, 2), hours=rng.randint(0, 6))
         rec_ts = agg_ts + timedelta(days=rng.randint(2, 4), hours=rng.randint(0, 6))
+        if held or end - tx.ts < DISPATCH_MIN_AGE or agg_ts > end:
+            continue
+        cat = materials[tx.material_id].category
+        rec = next(r for r in recyclers if cat in r.categories.split(","))
+        delivered = rec_ts <= end
         chain = build_chain(tx, collectors[tx.collector_id], aggregators[tx.aggregator_id],
-                            rec, agg_ts, rec_ts)
+                            rec, agg_ts, rec_ts if delivered else None)
         passports.append(
             MaterialPassport(
                 transaction_id=tx.id,
                 chain_json=json.dumps(chain),
                 recycler_id=rec.id,
-                status="delivered" if rec_ts <= end else "in_transit",
+                status="delivered" if delivered else "in_transit",
             )
         )
     return passports

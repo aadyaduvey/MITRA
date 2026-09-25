@@ -145,7 +145,7 @@ def test_epr_json(client):
     r = client.get("/api/epr/report", params=RANGE).json()
     active = sum(1 for c in client.get("/api/collectors").json() if c["lots"])
     assert r["totals"]["lots"] == 400 and r["totals"]["collectors"] == active == len(r["collector_ids"])
-    assert len(r["lots"]) == 15
+    assert len(r["lots"]) == len([l for l in r["lots"] if l["status"] in ("delivered", "in_transit")]) > 200
     assert all(lot["recycler_cpcb_reg_no"] for lot in r["lots"])
     kg = sum(m["kg_collected"] for m in r["by_material"])
     assert abs(kg - r["totals"]["kg_collected"]) < 0.5
@@ -162,7 +162,8 @@ def test_epr_csv(client):
     r = client.get("/api/epr/report", params={**RANGE, "format": "csv"})
     lines = r.text.strip().splitlines()
     assert r.headers["content-type"].startswith("text/csv")
-    assert lines[0].startswith("passport_id,transaction_id,collector_id") and len(lines) == 16
+    lots = client.get("/api/epr/report", params=RANGE).json()["lots"]
+    assert lines[0].startswith("passport_id,transaction_id,collector_id") and len(lines) == len(lots) + 1
 
 
 def test_epr_empty_range(client):

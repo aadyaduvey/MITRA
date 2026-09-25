@@ -8,7 +8,7 @@ from reportlab.lib.enums import TA_RIGHT
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 NAVY = colors.HexColor("#0B2A4A")
 RULE = colors.HexColor("#C8D1DC")
@@ -120,7 +120,18 @@ def render_epr_pdf(report: dict) -> bytes:
         [w * f for f in (0.38, 0.30, 0.08, 0.12, 0.12)], {2, 3, 4},
         "No material reached a recycler in this period")]
 
-    story += [Paragraph("3. Lot-level chain of custody", H2), _table(
+    ids = ", ".join(f"C-{i:06d}" for i in report["collector_ids"]) or "none"
+    n_lots = len(report["lots"])
+    story += [Paragraph("3. Contributing collectors", H2),
+              Paragraph(f"{len(report['collector_ids'])} collector IDs: {ids}", CELL),
+              Spacer(1, 6),
+              Paragraph("Delivered = recycler receipt recorded in the material passport. "
+                        "In transit = dispatched by aggregator, receipt pending. Lots without a "
+                        "passport are counted as collected only. Weights are as logged by the "
+                        "collector at the point of collection. "
+                        f"Lot-level chain of custody for all {n_lots} traced lots: Annex A.", CELL)]
+
+    story += [PageBreak(), Paragraph("Annex A. Lot-level chain of custody", H2), _table(
         ["Passport", "Collector", "Collected", "Material", "kg", "Recycler CPCB reg. no.",
          "Status", "Delivered"],
         [[lot["passport_id"], f"C-{lot['collector_id']:06d}", _day(lot["collected_at"], "%d %b"),
@@ -128,14 +139,5 @@ def render_epr_pdf(report: dict) -> bytes:
           lot["status"].replace("_", " "), _day(lot["delivered_at"], "%d %b")] for lot in report["lots"]],
         [w * f for f in (0.14, 0.095, 0.08, 0.235, 0.06, 0.225, 0.085, 0.08)], {4},
         "No traced lots in this period")]
-
-    ids = ", ".join(f"C-{i:06d}" for i in report["collector_ids"]) or "none"
-    story += [Paragraph("4. Contributing collectors", H2),
-              Paragraph(f"{len(report['collector_ids'])} collector IDs: {ids}", CELL),
-              Spacer(1, 6),
-              Paragraph("Delivered = recycler receipt recorded in the material passport. "
-                        "In transit = dispatched by aggregator, receipt pending. Lots without a "
-                        "passport are counted as collected only. Weights are as logged by the "
-                        "collector at the point of collection.", CELL)]
     doc.build(story, onFirstPage=_footer, onLaterPages=_footer)
     return buf.getvalue()
