@@ -49,11 +49,20 @@ export function CollectorMap() {
           <MaterialOptions />
         </Select>
         <div className="ml-auto flex items-center gap-2 text-[0.9rem] text-ink-2" aria-live="polite">
-          <span className="relative flex h-2.5 w-2.5">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#0ca30c] opacity-60" />
-            <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#0ca30c]" />
-          </span>
-          Live · refreshes every {LIVE_POLL_MS / 1000}s
+          {txState.error ? (
+            <>
+              <span className="inline-flex h-2.5 w-2.5 rounded-full bg-[#d03b3b]" />
+              Offline · retrying every {LIVE_POLL_MS / 1000}s
+            </>
+          ) : (
+            <>
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#0ca30c] opacity-60" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[#0ca30c]" />
+              </span>
+              Live · refreshes every {LIVE_POLL_MS / 1000}s
+            </>
+          )}
         </div>
       </FilterRow>
 

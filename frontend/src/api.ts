@@ -126,21 +126,21 @@ export function url(path: string, params: Record<string, string | number | null 
   return s ? `${path}?${s}` : path
 }
 
+const UNREACHABLE = 'Cannot reach the MITRA API. Is the backend running? (start everything with start.cmd)'
+
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   let res: Response
   try {
     res = await fetch(path, { signal })
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e
-    throw new Error('Cannot reach the MITRA API. Is the backend running on port 8000?')
+    throw new Error(UNREACHABLE)
   }
   if (!res.ok) {
-    let detail = res.statusText
-    try {
-      const body = await res.json()
-      detail = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail)
-    } catch { /* non-JSON error body */ }
-    if (res.status >= 500 && res.status < 600 && detail === '') detail = 'server error'
+    let body: { detail?: unknown } | undefined
+    try { body = await res.json() } catch { /* non-JSON: the dev proxy could not reach FastAPI */ }
+    if (body === undefined && res.status >= 500) throw new Error(UNREACHABLE)
+    const detail = typeof body?.detail === 'string' ? body.detail : JSON.stringify(body?.detail ?? res.statusText)
     throw new Error(`API ${res.status}: ${detail}`)
   }
   return res.json() as Promise<T>

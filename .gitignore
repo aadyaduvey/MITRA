@@ -16,3 +16,6 @@ frontend/dist/
 # bot runtime state and uploaded photos
 backend/data/bot_state.pickle
 backend/data/photos/
+
+# start.ps1 / start.sh logs
+logs/
