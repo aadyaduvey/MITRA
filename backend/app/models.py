@@ -5,11 +5,13 @@ material_passport.recycler_id points at. EPR output needs each destination
 recycler's name and CPCB registration number.
 
 All timestamps are timezone-aware; SQLModel stores them as UTC and returns
-them in UTC. Convert to IST for display.
+them in UTC. Anything we emit (passports, reports) is converted to IST.
 """
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from sqlmodel import Field, SQLModel
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 class Collector(SQLModel, table=True):

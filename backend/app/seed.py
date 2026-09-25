@@ -8,18 +8,19 @@ in IST (collection hours 07:00-19:00) and stored as UTC by SQLModel.
 
 Wipe + reseed:  uv run python -m app.seed
 """
-import csv
 import json
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy.engine import Engine
 from sqlmodel import Session, func, select
 
-from app.db import DATA_DIR, create_db_and_tables, drop_all, engine
+from app.db import create_db_and_tables, drop_all, engine
+from app.engine.pricing import PRICES_CSV, load_prices
 from app.models import (
     Aggregator,
+    IST,
     Collector,
     Material,
     MaterialPassport,
@@ -27,8 +28,6 @@ from app.models import (
     Transaction,
 )
 
-PRICES_CSV = DATA_DIR / "commodity_prices.csv"
-IST = timezone(timedelta(hours=5, minutes=30))
 
 N_COLLECTORS = 40
 N_TRANSACTIONS = 400
@@ -90,15 +89,10 @@ PAYOUT_FACTOR = (0.85, 1.0)
 
 
 def load_materials(path: Path = PRICES_CSV) -> list[Material]:
-    with path.open(newline="", encoding="utf-8") as f:
-        return [
-            Material(
-                name=row["material"],
-                category=row["category"],
-                ref_price_per_kg=float(row["ref_price_per_kg"]),
-            )
-            for row in csv.DictReader(f)
-        ]
+    return [
+        Material(name=p.material, category=p.category, ref_price_per_kg=p.ref_price_per_kg)
+        for p in load_prices(path).values()
+    ]
 
 
 def make_collectors(rng: random.Random, end: datetime) -> list[tuple[Collector, tuple[float, float]]]:
