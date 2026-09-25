@@ -1,0 +1,8 @@
+material,category,ref_price_per_kg
+PET plastic,pet,12
+HDPE,hdpe,14
+Cardboard/paper,paper,9
+Glass,glass,2
+Metal (steel/aluminium blended),metal,40
+Copper,metal,400
+E-waste,ewaste,25

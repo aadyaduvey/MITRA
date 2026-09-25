@@ -1,0 +1,25 @@
+[project]
+name = "mitra-backend"
+version = "0.1.0"
+description = "MITRA backend: material traceability + EPR compliance API"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "sqlmodel",
+    "pandas",
+    "numpy",
+    "python-telegram-bot",
+    "torch",
+    "torchvision",
+    "pillow",
+    "reportlab",
+    "httpx",
+    "pytest",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+backend/data/mitra.db
+backend/data/trashnet/*
+!backend/data/trashnet/.gitkeep
+*.pt
+*.pth
+.env
+node_modules/
+frontend/dist/
