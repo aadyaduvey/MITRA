@@ -2,6 +2,7 @@
 TestClient, and the real conversation handlers driven by fake Telegram objects."""
 import asyncio
 import hashlib
+import re
 from types import SimpleNamespace
 
 import httpx
@@ -128,8 +129,17 @@ def ctx(client):
     return SimpleNamespace(user_data={}, bot_data={"api": MitraClient(client=client)})
 
 
-def register(ctx, name="Ravi Kumar", area="Sanganer"):
-    assert run(bot.start(update("/start")[0], ctx)) == bot.NAME
+def choose_language(ctx, lang):
+    q = FakeQuery(f"lang:{lang}")
+    u, m = update()
+    u.callback_query = q
+    assert run(bot.got_language(u, ctx)) == bot.NAME
+    return q, m
+
+
+def register(ctx, name="Ravi Kumar", area="Sanganer", lang="en"):
+    assert run(bot.start(update("/start")[0], ctx)) == bot.LANG  # new user picks a language first
+    choose_language(ctx, lang)
     assert run(bot.got_name(update(name)[0], ctx)) == bot.AREA
     u, m = update(area)
     assert run(bot.got_area(u, ctx)) == bot.END
@@ -244,10 +254,11 @@ def test_log_requires_registration(ctx):
 
 
 def test_stale_registration_after_db_reset(ctx):
-    ctx.user_data.update(collector_id=99999, name="Ghost", code="MITRA-C-099999")
+    ctx.user_data.update(collector_id=99999, name="Ghost", code="MITRA-C-099999", lang="hi")
     u, m = update("/start")
-    assert run(bot.start(u, ctx)) == bot.NAME  # asks to register again
-    assert "collector_id" not in ctx.user_data
+    assert run(bot.start(u, ctx)) == bot.NAME  # asks to register again, language remembered
+    assert "collector_id" not in ctx.user_data and ctx.user_data["lang"] == "hi"
+    assert "आपका नाम क्या है?" in m.replies[-1]
 
 
 def test_api_down_is_reported_not_crashed():
@@ -263,7 +274,7 @@ def test_api_down_is_reported_not_crashed():
 
 def test_conversation_and_application_build():
     conv = bot.build_conversation()
-    assert set(conv.states) == {bot.NAME, bot.AREA, bot.MATERIAL, bot.WEIGHT, bot.PHOTO, bot.LOCATION}
+    assert set(conv.states) == {bot.LANG, bot.NAME, bot.AREA, bot.MATERIAL, bot.WEIGHT, bot.PHOTO, bot.LOCATION}
     assert conv.persistent and conv.name == "mitra"
 
 
@@ -364,7 +375,7 @@ def test_forget_flow_yes(ctx, client):
     u2.callback_query = q
     run(bot.forget_answer(u2, ctx))
     assert "deleted" in q.edits[-1] and "/start" in m2.replies[-1]
-    assert ctx.user_data == {}
+    assert ctx.user_data == {"lang": "en"}  # registration gone; language choice kept
     assert client.get("/api/collectors/41").json()["name"] == "Erased collector"
 
 
@@ -388,3 +399,178 @@ def test_forget_mid_log_ends_the_step(ctx):
     assert "lot" in ctx.user_data
     run(bot.forget(update("/forget")[0], ctx))
     assert "lot" not in ctx.user_data
+
+
+# ---------- Hindi ----------
+
+DEVANAGARI = re.compile(r"[ऀ-ॿ]")
+
+
+def test_every_message_and_button_exists_in_both_languages():
+    from app.classify.labels import LABELS
+    for key, texts in msg._T.items():
+        assert set(texts) == {"en", "hi"} and all(texts.values()), key
+        assert DEVANAGARI.search(texts["hi"]), f"{key} has no Hindi"
+    for key, labels in msg.BUTTONS.items():
+        assert DEVANAGARI.search(labels["hi"]) and not DEVANAGARI.search(labels["en"]), key
+    assert set(msg.LABEL_TEXT_HI) == set(LABELS)
+    seeded = {"PET plastic", "HDPE", "Cardboard/paper", "Glass", "Metal (steel/aluminium blended)", "Copper", "E-waste"}
+    assert seeded <= set(msg.MATERIAL_HI)
+
+
+def test_hindi_formatting():
+    copper = {"name": "Copper", "ref_price_per_kg": 400.0, "category": "metal"}
+    assert msg.material_button(copper, lang="hi") == "तांबा · ₹400/किलो"
+    assert msg.material_button(copper, True, lang="hi") == "📷 तांबा · ₹400/किलो"
+    assert msg.parse_weight("3.5 किलो") == 3.5
+    assert msg.material_name("Unknown thing", "hi") == "Unknown thing"  # falls back, never crashes
+    assert msg.t("bad_name", "fr") == msg.t("bad_name", "en")  # unknown language -> English
+
+
+def test_buttons_accept_both_languages():
+    for key in ("log", "prices", "skip_photo", "skip_location"):
+        for label in msg.all_labels(key):
+            assert re.match(bot.button_pattern(key), label), (key, label)
+    assert not re.match(bot.button_pattern("log"), "📦 Log material please")
+
+
+def test_full_flow_in_hindi(ctx, client, tmp_path, monkeypatch, fake_cv):
+    monkeypatch.setattr(bot, "PHOTO_DIR", tmp_path / "photos")
+    run(bot.start(update("/start")[0], ctx))
+    q, m = choose_language(ctx, "hi")
+    assert "हिंदी" in q.edits[-1] and "आपका नाम क्या है?" in m.replies[-1]
+    u, m = update("सुनीता देवी")
+    run(bot.got_name(u, ctx))
+    assert "आप किस इलाके में काम करते हैं?" in m.replies[-1]
+    u, m = update("राजा पार्क")
+    run(bot.got_area(u, ctx))
+    assert "आपका पंजीकरण हो गया" in m.replies[-1] and "MITRA-C-000041" in m.replies[-1]
+
+    u, m = update("📦 माल दर्ज करें")
+    assert run(bot.log_start(u, ctx)) == bot.PHOTO and "माल की फोटो भेजें" in m.replies[-1]
+    u, m = update(photo=[FakePhotoSize(b"img")])
+    run(bot.got_photo(u, ctx))
+    assert "यह <b>धातु</b> लगता है (91% भरोसा)" in m.replies[-1]
+    copper_id = next(i for i, mat in ctx.user_data["materials"].items() if mat["name"] == "Copper")
+    q = FakeQuery(f"mat:{copper_id}")
+    run(bot.got_material(SimpleNamespace(callback_query=q), ctx))
+    assert "तांबा" in q.edits[-1] and "₹400/किलो" in q.edits[-1] and "कितने किलो" in q.edits[-1]
+    u, m = update("abc")
+    run(bot.got_weight(u, ctx))
+    assert "कृपया वज़न" in m.replies[-1]
+    assert run(bot.got_weight(update("3.5 किलो")[0], ctx)) == bot.LOCATION
+    u, m = update(location=SimpleNamespace(latitude=26.9, longitude=75.83))
+    run(bot.got_location(u, ctx))
+    receipt = m.replies[-1]
+    for part in ("माल दर्ज हो गया", "पासपोर्ट MITRA-P-000401", "तांबा · 3.5 किलो", "₹400/किलो",
+                 "सही कीमत: <b>₹1,400</b>", "कैमरे का सुझाव: धातु; आपने पुष्टि की: तांबा", "नक्शे पर"):
+        assert part in receipt, part
+    # the database keeps canonical English material names; only the chat is translated
+    assert client.get("/api/transactions", params={"collector_id": 41}).json()[0]["material"] == "Copper"
+
+
+def test_switch_language_any_time(ctx):
+    register(ctx, lang="en")
+    u, m = update("/language")
+    assert run(bot.language(u, ctx)) == bot.END and "अपनी भाषा चुनें" in m.replies[-1]
+    q = FakeQuery("setlang:hi")
+    u, m = update()
+    u.callback_query = q
+    run(bot.set_language(u, ctx))
+    assert ctx.user_data["lang"] == "hi"
+    assert "फिर से स्वागत है" in m.replies[-1]
+    u, m = update("/prices")
+    run(bot.prices(u, ctx))
+    assert "आज के संदर्भ भाव" in m.replies[-1] and "तांबा: <b>₹400/किलो</b>" in m.replies[-1]
+    u, m = update("/help")
+    run(bot.help_cmd(u, ctx))
+    assert "/language" in m.replies[-1] and "भाषा बदलें" in m.replies[-1]
+
+
+def test_errors_and_forget_in_hindi(ctx, client):
+    register(ctx, lang="hi")
+    u, m = update("/forget")
+    run(bot.forget(u, ctx))
+    assert "क्या आप अपना डेटा हटाना चाहते हैं?" in m.replies[-1]
+    q = FakeQuery("forget:yes")
+    u2, m2 = update()
+    u2.callback_query = q
+    run(bot.forget_answer(u2, ctx))
+    assert "आपका नाम और जानकारी हटा दी गई है" in q.edits[-1] and "/start" in m2.replies[-1]
+    assert ctx.user_data == {"lang": "hi"}
+
+
+def test_api_down_message_in_hindi():
+    def refuse(request):
+        raise httpx.ConnectError("refused", request=request)
+
+    api = MitraClient(client=httpx.Client(transport=httpx.MockTransport(refuse), base_url="http://x"))
+    ctx = SimpleNamespace(user_data={"collector_id": 1, "name": "A", "lang": "hi"}, bot_data={"api": api})
+    u, m = update("/log")
+    run(bot.log_start(u, ctx))
+    assert "MITRA सर्वर से अभी संपर्क नहीं हो पा रहा है" in m.replies[-1]
+
+
+def test_offline_demo_in_hindi(client, capsys, tmp_path, monkeypatch, fake_cv):
+    from app.bot import offline_demo
+    monkeypatch.setattr(offline_demo, "PHOTO_DIR", tmp_path / "photos")
+    tx = run_offline_demo(MitraClient(client=client), pause=False, lang="hi")
+    out = capsys.readouterr().out
+    assert "नमस्ते" in out and "माल दर्ज हो गया" in out and "₹1,400" in out and tx["material"] == "Copper"
+
+
+# ---------- bad networks: IPv4 only, and never silent ----------
+
+
+def test_telegram_requests_use_ipv4_only(monkeypatch):
+    req = bot.IPv4Request()
+    assert req._client._transport._pool._local_address == "0.0.0.0"  # binds IPv4: no broken IPv6 route
+    monkeypatch.setenv("TELEGRAM_IPV6", "1")
+    assert bot.IPv4Request()._client._transport is not req._client._transport
+    assert getattr(bot.IPv4Request()._client._transport._pool, "_local_address", None) is None
+
+
+def test_every_step_asks_again_instead_of_staying_silent():
+    conv = bot.build_conversation()
+    expected = {bot.LANG: bot.again_language, bot.NAME: bot.again_name, bot.AREA: bot.again_area,
+                bot.MATERIAL: bot.again_material, bot.WEIGHT: bot.again_weight,
+                bot.PHOTO: bot.again_photo, bot.LOCATION: bot.again_location}
+    for state, handler in expected.items():
+        assert conv.states[state][-1].callback is handler, state
+
+
+def test_lost_location_question_is_asked_again(ctx):
+    """Regression: the location question was lost on a bad network; the next message got no reply."""
+    register(ctx, lang="hi")
+    run(bot.log_start(update("log")[0], ctx))
+    run(bot.skip_photo(update(bot.SKIP_PHOTO)[0], ctx))
+    run(bot.got_material(SimpleNamespace(callback_query=FakeQuery("mat:1")), ctx))
+    assert run(bot.got_weight(update("5")[0], ctx)) == bot.LOCATION
+    u, m = update("hello?")  # collector never saw the question
+    assert run(bot.again_location(u, ctx)) == bot.LOCATION
+    assert "लोकेशन भेजें" in m.replies[-1]
+
+
+def test_material_buttons_resent_with_camera_suggestion(ctx, tmp_path, monkeypatch, fake_cv):
+    monkeypatch.setattr(bot, "PHOTO_DIR", tmp_path / "photos")
+    register(ctx)
+    run(bot.log_start(update("log")[0], ctx))
+    run(bot.got_photo(update(photo=[FakePhotoSize(b"img")])[0], ctx))
+    u, m = update("copper")  # typed instead of tapping
+    assert run(bot.again_material(u, ctx)) == bot.MATERIAL
+    assert "tap one of the material buttons" in m.replies[-1]
+    assert ctx.user_data["lot"]["cv_suggested"] == "metal"  # suggestion kept for the re-sent buttons
+
+
+def test_prices_button_still_works_mid_conversation():
+    from datetime import datetime
+
+    from telegram import Chat, Message, Update
+
+    def tg(text):
+        return Update(1, message=Message(1, datetime.now(), Chat(1, "private"), text=text))
+
+    catch_all = bot.build_conversation().states[bot.LOCATION][-1]
+    for label in msg.all_labels("prices") + msg.all_labels("log"):
+        assert not catch_all.filters.check_update(tg(label)), label  # left to the prices / log handlers
+    assert catch_all.filters.check_update(tg("hello?"))  # anything else gets the question again

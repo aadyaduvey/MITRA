@@ -9,7 +9,7 @@ from app.db import get_session
 from app.engine.passport import passport_id
 from app.engine.pricing import quote
 from app.models import IST, Collector, Material, MaterialPassport, Transaction
-from app.schemas import CollectorOut, TransactionOut
+from app.schemas import CollectorOut, MaterialOut, TransactionOut
 
 SessionDep = Annotated[Session, Depends(get_session)]
 
@@ -48,6 +48,18 @@ def collector_out(c: Collector) -> CollectorOut:
                         phone=c.phone, registered_ts=in_ist(c.registered_ts))
 
 
+def price_at(t: Transaction, m: Material) -> float:
+    """Price shown when the lot was logged (current price only for rows from before the upgrade)."""
+    return t.ref_price_per_kg if t.ref_price_per_kg is not None else m.ref_price_per_kg
+
+
+def material_out(m: Material, latest: dict) -> MaterialOut:
+    """Material with when and where its current price came from."""
+    u = latest.get(m.id)
+    return MaterialOut(**m.model_dump(), price_updated_at=in_ist(u.ts) if u else None,
+                       price_source=u.source if u else None)
+
+
 def transaction_outs(session: Session, txs: list[Transaction]) -> list[TransactionOut]:
     if not txs:
         return []
@@ -64,7 +76,7 @@ def transaction_outs(session: Session, txs: list[Transaction]) -> list[Transacti
             id=t.id, collector_id=t.collector_id, collector_name=names[t.collector_id],
             material_id=m.id, material=m.name, category=m.category,
             weight_kg=t.weight_kg, amount_paid=t.amount_paid,
-            ref_price_per_kg=m.ref_price_per_kg, ref_amount=quote(m.ref_price_per_kg, t.weight_kg),
+            ref_price_per_kg=price_at(t, m), ref_amount=quote(price_at(t, m), t.weight_kg),
             gps_lat=t.gps_lat, gps_lon=t.gps_lon, photo_url=t.photo_url,
             cv_suggested=t.cv_suggested, cv_confidence=t.cv_confidence,
             ts=in_ist(t.ts), aggregator_id=t.aggregator_id,

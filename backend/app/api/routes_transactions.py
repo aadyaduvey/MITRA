@@ -4,9 +4,10 @@ from datetime import date, datetime
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlmodel import select
 
-from app.api.deps import SessionDep, day_bounds, transaction_outs
+from app.api.deps import SessionDep, day_bounds, material_out, transaction_outs
 from app.engine.pricing import quote
 from app.models import IST, Aggregator, Collector, Material, Transaction
+from app.prices.service import latest_updates
 from app.schemas import MaterialOut, TransactionCreate, TransactionOut
 
 router = APIRouter(prefix="/api", tags=["transactions"])
@@ -14,7 +15,8 @@ router = APIRouter(prefix="/api", tags=["transactions"])
 
 @router.get("/materials", response_model=list[MaterialOut])
 def list_materials(session: SessionDep) -> list[MaterialOut]:
-    return [MaterialOut(**m.model_dump()) for m in session.exec(select(Material).order_by(Material.id))]
+    latest = latest_updates(session)
+    return [material_out(m, latest) for m in session.exec(select(Material).order_by(Material.id))]
 
 
 def _unprocessable(msg: str) -> HTTPException:
@@ -37,7 +39,8 @@ def log_transaction(body: TransactionCreate, session: SessionDep) -> Transaction
     amount = body.amount_paid if body.amount_paid is not None else quote(
         material.ref_price_per_kg, body.weight_kg)
     tx = Transaction(**body.model_dump(exclude={"ts", "amount_paid"}),
-                     amount_paid=round(amount, 2), ts=ts.replace(microsecond=0))
+                     amount_paid=round(amount, 2), ts=ts.replace(microsecond=0),
+                     ref_price_per_kg=material.ref_price_per_kg)  # frozen: later changes keep this receipt
     session.add(tx)
     session.commit()
     session.refresh(tx)

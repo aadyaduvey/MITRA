@@ -60,6 +60,21 @@ class Transaction(SQLModel, table=True):
     cv_confidence: float | None = None
     ts: datetime = Field(index=True)
     aggregator_id: int | None = Field(default=None, foreign_key="aggregator.id")
+    # reference price shown to the collector when the lot was logged; later price
+    # changes must not rewrite past receipts (null only on databases created before this)
+    ref_price_per_kg: float | None = None
+
+
+class PriceUpdate(SQLModel, table=True):
+    """History of reference-price changes (manual or live feed)."""
+    __tablename__ = "price_update"
+
+    id: int | None = Field(default=None, primary_key=True)
+    material_id: int = Field(foreign_key="material.id", index=True)
+    price_per_kg: float
+    previous_price: float | None = None
+    source: str  # who/what set it, e.g. "Jaipur kabadi market" or "Live: MetalpriceAPI ..."
+    ts: datetime = Field(index=True)
 
 
 class MaterialPassport(SQLModel, table=True):

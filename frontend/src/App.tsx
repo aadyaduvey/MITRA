@@ -4,12 +4,14 @@ import { CollectorMap } from './views/CollectorMap'
 import { EprCompliance } from './views/EprCompliance'
 import { MaterialFlow } from './views/MaterialFlow'
 import { MinistryOverview } from './views/MinistryOverview'
+import { Prices } from './views/Prices'
 
 const VIEWS = [
   { id: 'map', label: 'Collector Map', blurb: 'First-mile lots, logged by chat with GPS', el: CollectorMap },
   { id: 'flow', label: 'Material Flow', blurb: 'Chain of custody from collector to authorised recycler', el: MaterialFlow },
   { id: 'epr', label: 'EPR Compliance', blurb: 'Report a producer can file with CPCB', el: EprCompliance },
   { id: 'ministry', label: 'Ministry Overview', blurb: 'Urban-mining intelligence for the Ministry of Mines', el: MinistryOverview },
+  { id: 'prices', label: 'Prices', blurb: 'Reference prices shown to collectors: set by hand or from the live metal feed', el: Prices },
 ] as const
 type ViewId = (typeof VIEWS)[number]['id']
 

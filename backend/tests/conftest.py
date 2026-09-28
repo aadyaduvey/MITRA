@@ -41,3 +41,19 @@ def client():
     app.dependency_overrides[get_session] = session_override
     yield TestClient(app)  # no `with`: lifespan (which touches mitra.db) does not run
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def isolate_prices_and_secrets(tmp_path, monkeypatch):
+    """Tests never write the real price file or read real keys from backend/.env."""
+    import shutil
+
+    from app import config
+    from app.engine import pricing
+
+    csv_copy = tmp_path / "commodity_prices.csv"
+    shutil.copy(pricing.PRICES_CSV, csv_copy)
+    monkeypatch.setattr(pricing, "PRICES_CSV", csv_copy)
+    monkeypatch.setattr(config, "ENV_FILE", tmp_path / "no.env")
+    for name in ("METAL_PRICE_API_KEY", "TELEGRAM_TOKEN"):
+        monkeypatch.delenv(name, raising=False)

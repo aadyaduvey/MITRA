@@ -118,6 +118,35 @@ export interface Sankey {
   pct_traced: number
 }
 
+export interface PriceRow extends Material {
+  price_updated_at: string | null
+  price_source: string | null
+  live: boolean
+  live_rule: string | null
+}
+
+export interface PriceBoard {
+  live_configured: boolean
+  live_provider: string
+  prices: PriceRow[]
+}
+
+export interface PriceHistoryRow {
+  id: number
+  material_id: number
+  material: string
+  price_per_kg: number
+  previous_price: number | null
+  source: string
+  ts: string
+}
+
+export interface LiveRefresh {
+  configured: boolean
+  message: string
+  results: { material: string; status: 'updated' | 'kept' | 'rejected'; old_price: number; new_price: number; detail: string }[]
+}
+
 /** Build a URL with only the params that are set. */
 export function url(path: string, params: Record<string, string | number | null | undefined> = {}) {
   const q = new URLSearchParams()
@@ -129,9 +158,22 @@ export function url(path: string, params: Record<string, string | number | null 
 const UNREACHABLE = 'Cannot reach the MITRA API. Is the backend running? (start everything with start.cmd)'
 
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
+  return requestJson<T>(path, { signal })
+}
+
+/** POST/PUT a JSON body; throws with the API's own error message. */
+export async function sendJson<T>(method: 'POST' | 'PUT', path: string, body?: unknown): Promise<T> {
+  return requestJson<T>(path, {
+    method,
+    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
+}
+
+async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
   let res: Response
   try {
-    res = await fetch(path, { signal })
+    res = await fetch(path, init)
   } catch (e) {
     if ((e as Error).name === 'AbortError') throw e
     throw new Error(UNREACHABLE)

@@ -37,7 +37,7 @@ Ctrl+C stops everything.
 
 | # | Do | Say |
 |---|---|---|
-| 1 | Phone, Telegram: `/start` → name → area. The bot replies with a **Collector ID** | "Digital identity for a kabadiwala in 20 seconds. No app, no form." |
+| 1 | Phone, Telegram: `/start` → tap **हिंदी** → name → area. The bot replies with a **Collector ID** | "Digital identity for a kabadiwala in 20 seconds, in Hindi. No app, no form." |
 | 2 | **📦 Log material** → send a photo of a can → the bot suggests *metal* → tap **Copper** → `3.5` → **📍 Share location** | "The camera only suggests; the collector confirms. He sees the fair price: ₹400/kg, ₹1,400." |
 | 3 | Dashboard **Collector Map**: the lot appears within ~5 s, outlined orange; click it for the passport | "First-mile material data, captured with zero app install." |
 | 4 | **Material Flow** | "kg flowing from collectors through aggregators to authorised recyclers, by material. This view does not exist today." |
@@ -46,7 +46,7 @@ Ctrl+C stops everything.
 
 **No internet at the venue?** Replace steps 1-2 with
 `cd backend; uv run python -m app.bot.offline_demo`. It runs the same conversation with the
-same wording and the same API calls, and it includes a real test photo.
+same wording and the same API calls, and it includes a real test photo. Add `--lang hi` for Hindi.
 
 ## How it fits together
 

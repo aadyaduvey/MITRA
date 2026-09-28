@@ -71,7 +71,7 @@ uv run python -m app.bot.telegram_bot
 
 | # | You send / tap | Bot replies |
 |---|---|---|
-| 1 | `/start` | Namaste, asks your name (English + Hindi) |
+| 1 | `/start`, then tap **हिंदी** or **English** | Namaste, asks your name. Every message after this is in the chosen language; `/language` switches any time |
 | 2 | `Sunita Devi` | asks your area |
 | 3 | `Raja Park` | "You are registered", **Collector ID MITRA-C-0000xx**, menu buttons appear |
 | 4 | tap **📦 Log material** | asks for a photo |
@@ -118,3 +118,26 @@ cd data/trashnet && python -m zipfile -e dataset-resized.zip . && cd ../..
 uv run python -m app.classify.train
 ```
 API: `GET /api/classify/status`, `POST /api/classify` (multipart `file`).
+
+## Reference prices: set by hand or from the live metal feed
+
+Collectors see these prices in the bot (**💰 Today's prices**) and on every receipt.
+A price change applies to new lots at once; past receipts keep the price they were given.
+
+```bash
+uv run python -m app.prices                                               # current prices, date, source
+uv run python -m app.prices set Copper 780 --source "Jaipur kabadi market"   # start of a name works: "cop"
+uv run python -m app.prices history Copper                                # every change: when, old, new, source
+uv run python -m app.prices live                                          # fetch copper from the live feed now
+```
+The same controls are on the dashboard's **Prices** page. Every change is saved to the
+database and to `data/commodity_prices.csv`, so `-Reseed` starts from the latest prices.
+
+**Live metal feed (copper):** free key from https://metalpriceapi.com, then add to `backend/.env`:
+```
+METAL_PRICE_API_KEY=your-key
+```
+Copper price = market price (INR/kg) x 90% scrap value x (1 - 10% trader margin), refreshed when the
+API starts if older than 12 hours, or on demand. If the feed is down, the key is wrong, or the
+result is outside Rs 300-2,000/kg, the last price is kept. Steel scrap, paper, PET, glass and
+e-waste have no free live feed: set them from the local rate card.

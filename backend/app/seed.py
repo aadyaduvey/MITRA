@@ -17,13 +17,14 @@ from sqlalchemy.engine import Engine
 from sqlmodel import Session, func, select
 
 from app.db import create_db_and_tables, drop_all, engine
-from app.engine.pricing import PRICES_CSV, load_prices
+from app.engine.pricing import load_prices
 from app.models import (
     Aggregator,
     IST,
     Collector,
     Material,
     MaterialPassport,
+    PriceUpdate,
     Recycler,
     Transaction,
 )
@@ -89,7 +90,7 @@ MATERIAL_PROFILE = {
 PAYOUT_FACTOR = (0.85, 1.0)
 
 
-def load_materials(path: Path = PRICES_CSV) -> list[Material]:
+def load_materials(path: Path | None = None) -> list[Material]:
     return [
         Material(name=p.material, category=p.category, ref_price_per_kg=p.ref_price_per_kg)
         for p in load_prices(path).values()
@@ -166,6 +167,7 @@ def make_transactions(
                 material_id=mat.id,
                 weight_kg=weight,
                 amount_paid=round(weight * mat.ref_price_per_kg * rng.uniform(*PAYOUT_FACTOR), 2),
+                ref_price_per_kg=mat.ref_price_per_kg,
                 gps_lat=lat,
                 gps_lon=lon,
                 ts=ts,
@@ -253,12 +255,28 @@ def seed(session: Session, *, rng_seed: int = 42, end: datetime | None = None) -
         recyclers, end,
     )
     session.add_all(passports)
+    session.add_all(initial_price_history(materials, end))
     session.commit()
     return counts(session)
 
 
+def initial_price_history(materials: list[Material], end: datetime) -> list[PriceUpdate]:
+    """One history row per material: where its starting price came from."""
+    prices = load_prices()
+    rows = []
+    for m in materials:
+        p = prices.get(m.name)
+        when = end - timedelta(days=N_DAYS + 1)
+        if p is not None and p.updated_on:
+            when = datetime.fromisoformat(p.updated_on).replace(tzinfo=IST)
+        rows.append(PriceUpdate(material_id=m.id, price_per_kg=m.ref_price_per_kg,
+                                source=(p.source if p is not None and p.source else "commodity_prices.csv"),
+                                ts=when))
+    return rows
+
+
 def counts(session: Session) -> dict[str, int]:
-    tables = [Collector, Material, Aggregator, Recycler, Transaction, MaterialPassport]
+    tables = [Collector, Material, Aggregator, Recycler, Transaction, MaterialPassport, PriceUpdate]
     return {t.__tablename__: session.exec(select(func.count()).select_from(t)).one() for t in tables}
 
 

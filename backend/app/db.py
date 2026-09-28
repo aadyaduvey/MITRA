@@ -25,6 +25,27 @@ def create_db_and_tables(bind: Engine = engine) -> None:
     from app import models  # noqa: F401  (registers tables on SQLModel.metadata)
 
     SQLModel.metadata.create_all(bind)
+    add_missing_columns(bind)
+
+
+def add_missing_columns(bind: Engine = engine) -> list[str]:
+    """Tiny migration: add nullable columns that exist in the models but not yet in an
+    older database file, so upgrading never needs a reseed. Returns what it added."""
+    from sqlalchemy import inspect, text
+
+    added = []
+    inspector = inspect(bind)
+    with bind.begin() as conn:
+        for table in SQLModel.metadata.sorted_tables:
+            if not inspector.has_table(table.name):
+                continue
+            existing = {c["name"] for c in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name not in existing and column.nullable:
+                    ddl = column.type.compile(dialect=bind.dialect)
+                    conn.execute(text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {ddl}'))
+                    added.append(f"{table.name}.{column.name}")
+    return added
 
 
 def drop_all(bind: Engine = engine) -> None:

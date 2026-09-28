@@ -67,6 +67,8 @@ class MaterialOut(BaseModel):
     name: str
     category: str
     ref_price_per_kg: float
+    price_updated_at: datetime | None = None
+    price_source: str | None = None
 
 
 class TransactionCreate(BaseModel):
@@ -335,3 +337,46 @@ class ClassifyOut(BaseModel):
     confident: bool
     alternatives: list[CvAlternative]
     note: str
+
+
+# ---------- reference prices ----------
+
+
+class PriceRow(MaterialOut):
+    live: bool  # has a live market feed (copper)
+    live_rule: str | None
+
+
+class PriceBoard(BaseModel):
+    live_configured: bool  # METAL_PRICE_API_KEY present
+    live_provider: str
+    prices: list[PriceRow]
+
+
+class PriceSet(BaseModel):
+    ref_price_per_kg: float = Field(gt=0, le=100_000)
+    source: str = Field(min_length=2, max_length=160, description="Where this price comes from")
+
+
+class PriceHistoryRow(BaseModel):
+    id: int
+    material_id: int
+    material: str
+    price_per_kg: float
+    previous_price: float | None
+    source: str
+    ts: datetime
+
+
+class LiveResult(BaseModel):
+    material: str
+    status: str  # updated | kept | rejected
+    old_price: float
+    new_price: float
+    detail: str
+
+
+class LiveRefresh(BaseModel):
+    configured: bool
+    message: str
+    results: list[LiveResult]

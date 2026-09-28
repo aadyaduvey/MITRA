@@ -62,7 +62,8 @@ def build_passport(
         "collected_at": ist(tx.ts),
         "collector": {"id": collector.id, "name": collector.name, "area": collector.area},
         "material": {"name": material.name, "category": material.category,
-                     "ref_price_per_kg": material.ref_price_per_kg},
+                     "ref_price_per_kg": tx.ref_price_per_kg if tx.ref_price_per_kg is not None
+                     else material.ref_price_per_kg},
         "weight_kg": tx.weight_kg,
         "amount_paid": tx.amount_paid,
         "gps": {"lat": tx.gps_lat, "lon": tx.gps_lon} if has_gps else None,
