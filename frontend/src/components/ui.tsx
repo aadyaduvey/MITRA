@@ -11,7 +11,7 @@ export function Card({ title, subtitle, children, actions, className = '' }: {
       {(title || actions) && (
         <header className="mb-3 flex flex-wrap items-start justify-between gap-3">
           <div>
-            {title && <h2 className="text-lg font-semibold text-navy-900">{title}</h2>}
+            {title && <h2 className="border-l-4 border-saffron pl-2.5 text-lg font-semibold text-navy-900">{title}</h2>}
             {subtitle && <p className="mt-0.5 text-[0.9rem] text-ink-2">{subtitle}</p>}
           </div>
           {actions}
@@ -24,7 +24,7 @@ export function Card({ title, subtitle, children, actions, className = '' }: {
 
 export function StatTile({ label, value, note }: { label: string; value: ReactNode; note?: ReactNode }) {
   return (
-    <div className="rounded-lg border border-black/10 bg-white px-5 py-4 shadow-sm">
+    <div className="rounded-lg border border-black/10 border-t-4 border-t-navy-800 bg-white px-5 py-4 shadow-sm">
       <div className="text-[0.85rem] font-medium uppercase tracking-wide text-ink-2">{label}</div>
       <div className="mt-1 text-[1.9rem] leading-tight font-semibold text-navy-900">{value}</div>
       {note && <div className="mt-1 text-[0.85rem] text-muted">{note}</div>}
