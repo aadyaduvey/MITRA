@@ -1,8 +1,8 @@
 material,category,ref_price_per_kg,source,updated_on
-PET plastic,pet,12,Indicative FY24-25 estimate (PoC default),
-HDPE,hdpe,14,Indicative FY24-25 estimate (PoC default),
-Cardboard/paper,paper,9,Indicative FY24-25 estimate (PoC default),
-Glass,glass,2,Indicative FY24-25 estimate (PoC default),
-Metal (steel/aluminium blended),metal,40,Indicative FY24-25 estimate (PoC default),
-Copper,metal,400,Indicative FY24-25 estimate (PoC default),
-E-waste,ewaste,25,Indicative FY24-25 estimate (PoC default),
+PET plastic,pet,15,jaipur kabadi market,2026-09-29
+HDPE,hdpe,12,sanganer sangh,2026-09-29
+Cardboard/paper,paper,10,jaipur kabadi sangh,2026-09-29
+Glass,glass,4,jhotwara kabadi sangh,2026-09-29
+Metal (steel/aluminium blended),metal,43,jhotwara kabadi sangh,2026-09-29
+Copper,metal,500,jaiur kabadi sangh,2026-09-29
+E-waste,ewaste,22,jaipur kabadi sangh,2026-09-29

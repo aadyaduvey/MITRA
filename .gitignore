@@ -19,3 +19,6 @@ backend/data/photos/
 
 # start.ps1 / start.sh logs
 logs/
+
+# downloaded helper tools (cloudflared for --share)
+tools/

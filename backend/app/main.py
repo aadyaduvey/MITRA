@@ -16,6 +16,7 @@ from app.api import (
     routes_transactions,
 )
 from app.db import create_db_and_tables, engine
+from app.remote import RemoteReadOnly
 
 DEFAULT_ORIGINS = "http://localhost:5173,http://127.0.0.1:5173"
 
@@ -30,6 +31,7 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="MITRA", version="0.1.0",
               description="Material traceability + EPR compliance API", lifespan=lifespan)
+app.add_middleware(RemoteReadOnly)  # shared links can view, only the laptop can change data
 app.add_middleware(
     CORSMiddleware,
     allow_origins=os.environ.get("MITRA_CORS_ORIGINS", DEFAULT_ORIGINS).split(","),

@@ -33,6 +33,22 @@ The first run downloads about 1 GB of packages (mostly PyTorch). After that it s
 
 Ctrl+C stops everything.
 
+### Open the dashboard on other devices (any network)
+
+```bash
+./start.sh --share        # Git Bash / macOS / Linux
+.\start.cmd -Share        # PowerShell
+```
+Prints a public link like `https://word-word-word.trycloudflare.com` (free Cloudflare quick tunnel,
+no account). It opens on any phone or laptop, on any network, while this laptop keeps MITRA running.
+The first run downloads Cloudflare's `cloudflared` program (about 60 MB) into `tools/`.
+
+- **Shared links are view-only:** other devices can see every page and download EPR reports, but
+  cannot change prices or delete collectors. Changes only work on this laptop. The Telegram bot
+  runs here, so it is unaffected. (`MITRA_REMOTE_EDITS=1` in `backend/.env` allows remote edits.)
+- The link changes every time you start, and stops working when you press Ctrl+C.
+- Anyone with the link can view the data, so share it only with people who should see it.
+
 ## The 3-minute demo
 
 | # | Do | Say |

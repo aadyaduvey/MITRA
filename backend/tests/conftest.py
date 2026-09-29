@@ -43,16 +43,40 @@ def client():
     app.dependency_overrides.clear()
 
 
-@pytest.fixture(autouse=True)
-def isolate_prices_and_secrets(tmp_path, monkeypatch):
-    """Tests never write the real price file or read real keys from backend/.env."""
-    import shutil
+# Fixed prices for tests: tests must not depend on the real price file, which people edit.
+TEST_PRICES_CSV = """material,category,ref_price_per_kg,source,updated_on
+PET plastic,pet,12,Indicative FY24-25 estimate (PoC default),
+HDPE,hdpe,14,Indicative FY24-25 estimate (PoC default),
+Cardboard/paper,paper,9,Indicative FY24-25 estimate (PoC default),
+Glass,glass,2,Indicative FY24-25 estimate (PoC default),
+Metal (steel/aluminium blended),metal,40,Indicative FY24-25 estimate (PoC default),
+Copper,metal,400,Indicative FY24-25 estimate (PoC default),
+E-waste,ewaste,25,Indicative FY24-25 estimate (PoC default),
+"""
 
+
+@pytest.fixture(scope="session", autouse=True)
+def fixed_test_prices(tmp_path_factory):
+    """Point the whole test session at the fixed price list (before any DB is seeded)."""
+    from app.engine import pricing
+
+    path = tmp_path_factory.mktemp("prices") / "commodity_prices.csv"
+    path.write_text(TEST_PRICES_CSV, encoding="utf-8")
+    real = pricing.PRICES_CSV
+    pricing.PRICES_CSV = path
+    yield path
+    pricing.PRICES_CSV = real
+
+
+@pytest.fixture(autouse=True)
+def isolate_prices_and_secrets(tmp_path, monkeypatch, fixed_test_prices):
+    """Each test gets its own copy of the fixed prices (writes never leak between tests or
+    reach the real file) and never reads real keys from backend/.env."""
     from app import config
     from app.engine import pricing
 
     csv_copy = tmp_path / "commodity_prices.csv"
-    shutil.copy(pricing.PRICES_CSV, csv_copy)
+    csv_copy.write_text(TEST_PRICES_CSV, encoding="utf-8")
     monkeypatch.setattr(pricing, "PRICES_CSV", csv_copy)
     monkeypatch.setattr(config, "ENV_FILE", tmp_path / "no.env")
     for name in ("METAL_PRICE_API_KEY", "TELEGRAM_TOKEN"):

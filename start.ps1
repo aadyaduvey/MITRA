@@ -13,6 +13,8 @@
   .\start.cmd -Reseed         # fresh demo data (wipes lots logged during rehearsal)
 .EXAMPLE
   .\start.cmd -Smoke          # start, check every part, print PASS/FAIL, stop
+.EXAMPLE
+  .\start.cmd -Share          # also print a public link that opens on any device, any network (view-only)
 #>
 param(
     [int]$ApiPort = 8000,
@@ -20,7 +22,8 @@ param(
     [switch]$Reseed,
     [switch]$NoBot,
     [switch]$NoBrowser,
-    [switch]$Smoke
+    [switch]$Smoke,
+    [switch]$Share
 )
 
 $ErrorActionPreference = 'Continue'   # native tools write progress to stderr; we check exit codes
@@ -66,6 +69,20 @@ function Stop-Parts($Parts) {
             & taskkill.exe /PID $part.Process.Id /T /F 2>$null | Out-Null
         }
     }
+}
+
+function Get-Cloudflared {
+    # Cloudflare's tunnel program: on PATH, or a copy in .\tools\ (downloaded on first use)
+    $cmd = Get-Command cloudflared -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $exe = Join-Path $Root 'tools\cloudflared.exe'
+    if (-not (Test-Path $exe)) {
+        Say '      Downloading Cloudflare tunnel (one time, about 60 MB)...'
+        New-Item -ItemType Directory -Force (Join-Path $Root 'tools') | Out-Null
+        $url = 'https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe'
+        Invoke-WebRequest $url -OutFile $exe -UseBasicParsing
+    }
+    return $exe
 }
 
 function Test-TokenSet {
@@ -120,6 +137,20 @@ try {
     $parts += Start-Part 'dashboard' 'cmd.exe' @('/c', "pnpm dev --port $WebPort --strictPort") $Frontend
     if (-not (Wait-Http "http://localhost:$WebPort/" 60)) { throw "Dashboard did not start. See $Logs\dashboard.log" }
 
+    $shareLink = $null
+    if ($Share -and -not $Smoke) {
+        Say '      Making a public link...'
+        $cf = Get-Cloudflared
+        $parts += Start-Part 'tunnel' $cf @('tunnel', '--url', "http://localhost:$WebPort", '--no-autoupdate') $Root
+        $deadline = (Get-Date).AddSeconds(60)
+        while (-not $shareLink -and (Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 700
+            $m = Select-String -Path (Join-Path $Logs 'tunnel.err.log') -Pattern 'https://[a-z0-9-]+\.trycloudflare\.com' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($m) { $shareLink = $m.Matches[0].Value }
+        }
+        if (-not $shareLink) { throw "No public link after 60 s. See $Logs\tunnel.err.log" }
+    }
+
     $botStatus = 'skipped: no TELEGRAM_TOKEN in backend\.env (offline demo: see README)'
     if ($NoBot -or $Smoke) {
         $botStatus = 'not started (-NoBot)'
@@ -161,6 +192,7 @@ try {
     Say ''
     Say 'MITRA is running' Green
     Say "  Dashboard   http://localhost:$WebPort"
+    if ($shareLink) { Say "  Share link  $shareLink   (any device, any network; view-only)" Green }
     Say "  API docs    http://localhost:$ApiPort/docs"
     Say "  Telegram    $botStatus"
     Say "  Logs        $Logs"
